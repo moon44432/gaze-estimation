@@ -4,6 +4,8 @@ import argparse
 import warnings
 import numpy as np
 from collections import deque
+import json
+import os
 
 import torch
 import torch.nn.functional as F
@@ -168,36 +170,90 @@ class PostureAnalyzer:
         
         self.ongoing_actions.clear()
     
-    def print_final_statistics(self):
-        """Print comprehensive statistics of detected actions"""
+    def print_final_statistics(self, save_json=True, json_filename="posture_analysis_result.json"):
+        """Print comprehensive statistics of detected actions and save to JSON"""
         print("\n" + "="*50)
         print("📊 발표 자세 분석 최종 결과")
         print("="*50)
         
         total_actions = sum(len(periods) for periods in self.action_periods.values())
         
+        # Prepare data for JSON export
+        json_data = {
+            "summary": {
+                "total_bad_postures": total_actions,
+                "total_duration_seconds": 0,
+                "analysis_settings": {
+                    "window_duration": self.window_duration,
+                    "fps": self.fps,
+                    "skip_frames": self.skip
+                }
+            },
+            "detected_actions": {}
+        }
+        
         if total_actions == 0:
             print("✅ 문제가 되는 자세가 발견되지 않았습니다!")
-            return
+            json_data["summary"]["message"] = "문제가 되는 자세가 발견되지 않았습니다"
+        else:
+            print(f"총 {total_actions}개의 나쁜 자세 구간이 탐지되었습니다.\n")
+            
+            total_duration_frames = 0
+            
+            for action_key, periods in self.action_periods.items():
+                if periods:
+                    action_name = self.get_action_name(action_key)
+                    print(f"📌 {action_name}:")
+                    
+                    # Prepare JSON data for this action
+                    json_data["detected_actions"][action_key] = {
+                        "action_name": action_name,
+                        "periods": []
+                    }
+                    
+                    action_total_duration = 0
+                    for i, (start, end) in enumerate(periods, 1):
+                        # Adjust for skipped frames
+                        actual_start = start * self.skip
+                        actual_end = end * self.skip
+                        duration = actual_end - actual_start + 1
+                        action_total_duration += duration
+                        duration_sec = duration / self.fps
+                        
+                        print(f"   구간 {i}: {actual_start}프레임 - {actual_end}프레임 ({duration_sec:.1f}초)")
+                        
+                        # Add to JSON data
+                        json_data["detected_actions"][action_key]["periods"].append({
+                            "start_frame": int(actual_start),
+                            "end_frame": int(actual_end),
+                            "duration_frames": int(duration),
+                            "duration_seconds": round(duration_sec, 1)
+                        })
+                    
+                    total_duration_frames += action_total_duration
+                    action_total_sec = action_total_duration / self.fps
+                    print(f"   총 지속 시간: {action_total_sec:.1f}초 ({len(periods)}회 발생)\n")
+                    
+                    # Add summary to JSON
+                    json_data["detected_actions"][action_key]["summary"] = {
+                        "total_duration_seconds": round(action_total_sec, 1),
+                        "occurrence_count": len(periods)
+                    }
+            
+            # Update total duration in summary
+            total_duration_sec = total_duration_frames / self.fps
+            json_data["summary"]["total_duration_seconds"] = round(total_duration_sec, 1)
         
-        print(f"총 {total_actions}개의 나쁜 자세 구간이 탐지되었습니다.\n")
+        # Save to JSON file
+        if save_json:
+            try:
+                with open(json_filename, 'w', encoding='utf-8') as f:
+                    json.dump(json_data, f, ensure_ascii=False, indent=2)
+                print(f"📄 분석 결과가 '{json_filename}' 파일로 저장되었습니다.")
+            except Exception as e:
+                print(f"⚠️ JSON 파일 저장 중 오류 발생: {e}")
         
-        for action_key, periods in self.action_periods.items():
-            if periods:
-                action_name = self.get_action_name(action_key)
-                print(f"📌 {action_name}:")
-                
-                total_duration = 0
-                for i, (start, end) in enumerate(periods, 1):
-                    start *= self.skip  # Adjust for skipped frames
-                    end *= self.skip
-                    duration = end - start + 1
-                    total_duration += duration
-                    duration_sec = duration / self.fps
-                    print(f"   구간 {i}: {start}프레임 - {end}프레임 ({duration_sec:.1f}초)")
-                
-                total_sec = total_duration / self.fps
-                print(f"   총 지속 시간: {total_sec:.1f}초 ({len(periods)}회 발생)\n")
+        return json_data
     
     def detect_gaze_down(self):
         """Detect if head is looking down for majority of window"""
@@ -395,6 +451,8 @@ def parse_args():
                         help="Path to source video file or camera index")
     parser.add_argument("--output", type=str, default="output.mp4", help="Path to save output file")
     parser.add_argument("--dataset", type=str, default="gaze360", help="Dataset name to get dataset related configs")
+    parser.add_argument("--json-output", type=str, default="posture_analysis_result.json", 
+                    help="Path to save JSON analysis results")
     args = parser.parse_args()
 
     # Override default values based on selected dataset
@@ -548,7 +606,7 @@ def main(params):
     
     # Finalize analysis and print comprehensive results
     posture_analyzer.finalize_analysis()
-    posture_analyzer.print_final_statistics()
+    posture_analyzer.print_final_statistics(save_json=True, json_filename=args.json_output)
 
 
 if __name__ == "__main__":

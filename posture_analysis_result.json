@@ -1,0 +1,103 @@
+{
+  "summary": {
+    "total_bad_postures": 9,
+    "total_duration_seconds": 32.2,
+    "analysis_settings": {
+      "window_duration": 4.0,
+      "fps": 30.0,
+      "skip_frames": 3
+    }
+  },
+  "detected_actions": {
+    "gaze_down": {
+      "action_name": "시선을 아래로",
+      "periods": [
+        {
+          "start_frame": 285,
+          "end_frame": 351,
+          "duration_frames": 67,
+          "duration_seconds": 2.2
+        }
+      ],
+      "summary": {
+        "total_duration_seconds": 2.2,
+        "occurrence_count": 1
+      }
+    },
+    "body_sway": {
+      "action_name": "좌우로 몸 흔들기",
+      "periods": [
+        {
+          "start_frame": 3,
+          "end_frame": 3,
+          "duration_frames": 1,
+          "duration_seconds": 0.0
+        },
+        {
+          "start_frame": 9,
+          "end_frame": 177,
+          "duration_frames": 169,
+          "duration_seconds": 5.6
+        },
+        {
+          "start_frame": 186,
+          "end_frame": 201,
+          "duration_frames": 16,
+          "duration_seconds": 0.5
+        },
+        {
+          "start_frame": 936,
+          "end_frame": 939,
+          "duration_frames": 4,
+          "duration_seconds": 0.1
+        },
+        {
+          "start_frame": 948,
+          "end_frame": 1017,
+          "duration_frames": 70,
+          "duration_seconds": 2.3
+        }
+      ],
+      "summary": {
+        "total_duration_seconds": 8.7,
+        "occurrence_count": 5
+      }
+    },
+    "head_tilt": {
+      "action_name": "고개 기울이기",
+      "periods": [
+        {
+          "start_frame": 951,
+          "end_frame": 1185,
+          "duration_frames": 235,
+          "duration_seconds": 7.8
+        }
+      ],
+      "summary": {
+        "total_duration_seconds": 7.8,
+        "occurrence_count": 1
+      }
+    },
+    "hand_on_face": {
+      "action_name": "머리나 얼굴 긁기",
+      "periods": [
+        {
+          "start_frame": 402,
+          "end_frame": 675,
+          "duration_frames": 274,
+          "duration_seconds": 9.1
+        },
+        {
+          "start_frame": 744,
+          "end_frame": 873,
+          "duration_frames": 130,
+          "duration_seconds": 4.3
+        }
+      ],
+      "summary": {
+        "total_duration_seconds": 13.5,
+        "occurrence_count": 2
+      }
+    }
+  }
+}
