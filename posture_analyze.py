@@ -46,9 +46,8 @@ class PostureAnalyzer:
             'gaze_down': False,
             'body_sway': False,
             'head_tilt': False,
-            'hand_face': False,
+            'hand_on_face': False,
             'turned_away': False,
-            'hands_behind': False
         }
         
         # Tracking action periods
@@ -56,9 +55,8 @@ class PostureAnalyzer:
             'gaze_down': [],
             'body_sway': [],
             'head_tilt': [],
-            'hand_face': [],
+            'hand_on_face': [],
             'turned_away': [],
-            'hands_behind': []
         }
         
         # Current ongoing actions (start frame recorded, waiting for end)
@@ -109,10 +107,6 @@ class PostureAnalyzer:
         if self.detect_turned_away():
             detected.append("뒤돌아선 채로 있기")
         
-        # 6. Hands behind back detection
-        if self.detect_hands_behind_back():
-            detected.append("뒷짐 지기")
-        
         return detected
     
     def update_action_tracking(self, detected_actions):
@@ -121,9 +115,8 @@ class PostureAnalyzer:
             "시선을 아래로": "gaze_down",
             "좌우로 몸 흔들기": "body_sway", 
             "고개 기울이기": "head_tilt",
-            "머리나 얼굴 긁기": "hand_face",
+            "머리나 얼굴 긁기": "hand_on_face",
             "뒤돌아선 채로 있기": "turned_away",
-            "뒷짐 지기": "hands_behind"
         }
         
         current_detected_keys = set()
@@ -160,9 +153,8 @@ class PostureAnalyzer:
             'gaze_down': '시선을 아래로',
             'body_sway': '좌우로 몸 흔들기',
             'head_tilt': '고개 기울이기', 
-            'hand_face': '머리나 얼굴 긁기',
+            'hand_on_face': '머리나 얼굴 긁기',
             'turned_away': '뒤돌아선 채로 있기',
-            'hands_behind': '뒷짐 지기'
         }
         return names.get(action_key, action_key)
     
@@ -218,76 +210,70 @@ class PostureAnalyzer:
         return down_count > len(self.gaze_data) * 0.6
     
     def detect_body_swaying(self):
-        """Detect excessive left-right body movement using shoulders and face"""
+        """Detect left-right body swaying using body keypoints movement analysis"""
         if len(self.pose_data) < 10:
             return False
         
-        shoulder_centers = []
-        face_centers = []
+        body_centers = []
         bbox_widths = []
         
+        # Extract body center positions from each frame
         for i, pose in enumerate(self.pose_data):
-            if pose is not None and len(pose) > 11 and self.bbox_data[i] is not None:
-                # Get key body parts
+            if pose is not None and len(pose) > 12 and self.bbox_data[i] is not None:
+                # Get body keypoints: shoulders (5,6) and hips (11,12)
                 left_shoulder = pose[5]
                 right_shoulder = pose[6]
-                nose = pose[0]
-                left_eye = pose[1]
-                right_eye = pose[2]
+                left_hip = pose[11]
+                right_hip = pose[12]
                 
-                # Check confidence for shoulders
+                # Check if shoulders have good confidence
                 if left_shoulder[2] > 0.5 and right_shoulder[2] > 0.5:
-                    # Calculate shoulder center
-                    shoulder_center_x = (left_shoulder[0] + right_shoulder[0]) / 2
-                    shoulder_centers.append(shoulder_center_x)
-                    
-                    # Calculate face center (use available face keypoints)
-                    face_x_coords = []
-                    if nose[2] > 0.5:
-                        face_x_coords.append(nose[0])
-                    if left_eye[2] > 0.5:
-                        face_x_coords.append(left_eye[0])
-                    if right_eye[2] > 0.5:
-                        face_x_coords.append(right_eye[0])
-                    
-                    if face_x_coords:
-                        face_center_x = np.mean(face_x_coords)
-                        face_centers.append(face_center_x)
+                    # Try to use both shoulders and hips if available
+                    if left_hip[2] > 0.5 and right_hip[2] > 0.5:
+                        # Calculate body center using shoulders and hips (full torso)
+                        body_center_x = (left_shoulder[0] + right_shoulder[0] + left_hip[0] + right_hip[0]) / 4
                     else:
-                        face_centers.append(shoulder_center_x)  # fallback
+                        # Fall back to shoulders only (for sitting cases)
+                        body_center_x = (left_shoulder[0] + right_shoulder[0]) / 2
+                    
+                    body_centers.append(body_center_x)
                     
                     # Get bounding box width for normalization
                     bbox = self.bbox_data[i]
                     bbox_width = bbox[2] - bbox[0] if bbox[2] > bbox[0] else 100
                     bbox_widths.append(bbox_width)
         
-        if len(shoulder_centers) < 5 or len(face_centers) < 5:
+        if len(body_centers) < 10:  # Need at least 10 frames for analysis
             return False
         
-        # Calculate movements normalized by bbox width
-        shoulder_movements = []
-        face_movements = []
+        # Calculate position changes between consecutive frames
+        position_changes = []
         
-        for i in range(1, len(shoulder_centers)):
+        for i in range(1, len(body_centers)):
             bbox_width = bbox_widths[i]
-            
-            shoulder_movement = abs(shoulder_centers[i] - shoulder_centers[i-1]) / bbox_width
-            face_movement = abs(face_centers[i] - face_centers[i-1]) / bbox_width
-            
-            shoulder_movements.append(shoulder_movement)
-            face_movements.append(face_movement)
+            # Normalize position change by bbox width
+            change = (body_centers[i] - body_centers[i-1]) / bbox_width
+            position_changes.append(change)
         
-        if len(shoulder_movements) == 0:
+        if len(position_changes) == 0:
             return False
         
-        # Check if both shoulders AND face are swaying together
-        avg_shoulder_movement = np.mean(shoulder_movements)
-        avg_face_movement = np.mean(face_movements)
+        # Calculate sum of changes and sum of absolute changes
+        sum_of_changes = sum(position_changes)
+        sum_of_abs_changes = sum(abs(change) for change in position_changes)
         
-        # Both body parts should show significant synchronized movement
-        is_swaying = (avg_shoulder_movement > self.BODY_SWAY_RATIO and 
-                     avg_face_movement > self.BODY_SWAY_RATIO and
-                     abs(avg_shoulder_movement - avg_face_movement) < self.BODY_SWAY_RATIO * 0.5)
+        # If sum of absolute changes is much larger than sum of changes,
+        # it indicates oscillatory movement (swaying)
+        if sum_of_abs_changes == 0:
+            return False
+        
+        # Calculate ratio: how much the movements cancel each other out
+        cancellation_ratio = abs(sum_of_changes) / sum_of_abs_changes
+        
+        # If movements largely cancel out (ratio close to 0) and there's significant movement,
+        # it indicates swaying
+        is_swaying = (cancellation_ratio < 0.2 and  # Movements cancel each other out
+                    sum_of_abs_changes > self.BODY_SWAY_RATIO)  # But there's significant movement
         
         return is_swaying
     
@@ -318,7 +304,7 @@ class PostureAnalyzer:
     
     def detect_hand_to_face(self):
         """Detect if hands are frequently near eyes area"""
-        hand_face_count = 0
+        hand_on_face_count = 0
         
         for i, pose in enumerate(self.pose_data):
             if pose is not None and len(pose) > 10 and self.bbox_data[i] is not None:
@@ -359,10 +345,10 @@ class PostureAnalyzer:
                         hand_near_face = True
                 
                 if hand_near_face:
-                    hand_face_count += 1
+                    hand_on_face_count += 1
         
         # If hands near face for more than 10% of window
-        return hand_face_count > len(self.pose_data) * 0.1
+        return hand_on_face_count > len(self.pose_data) * 0.1
     
     def detect_turned_away(self):
         """Detect if person is turned away from camera using shoulder keypoint order"""
@@ -385,32 +371,6 @@ class PostureAnalyzer:
         
         # If turned away for more than 50% of window
         return turned_count > len(self.pose_data) * 0.5
-    
-    def detect_hands_behind_back(self):
-        """Detect if hands are behind back (torso visible but hands not visible)"""
-        hands_behind_count = 0
-        
-        for pose in self.pose_data:
-            if pose is not None and len(pose) > 12:
-                # Check if torso keypoints are visible
-                left_shoulder = pose[5]
-                right_shoulder = pose[6]
-                left_hip = pose[11]
-                right_hip = pose[12]
-                
-                # Check if wrists are visible
-                left_wrist = pose[9]
-                right_wrist = pose[10]
-                
-                # If torso is visible but both hands are not visible
-                torso_visible = all(kp[2] > 0.5 for kp in [left_shoulder, right_shoulder, left_hip, right_hip])
-                hands_not_visible = left_wrist[2] < 0.6 and right_wrist[2] < 0.6
-                
-                if torso_visible and hands_not_visible:
-                    hands_behind_count += 1
-        
-        # If hands behind back for more than 60% of window
-        return hands_behind_count > len(self.pose_data) * 0.6
     
     def get_results(self):
         """Get all detected action periods"""
