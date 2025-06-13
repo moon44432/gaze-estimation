@@ -10,6 +10,7 @@ from torchvision import transforms
 
 from config import data_config
 from utils.helpers import get_model, draw_bbox_gaze
+from ultralytics import YOLO
 
 import uniface
 
@@ -19,11 +20,11 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Gaze estimation inference")
-    parser.add_argument("--model", type=str, default="resnet34", help="Model name, default `resnet18`")
+    parser.add_argument("--model", type=str, default="mobilenetv2", help="Model name, default `resnet18`")
     parser.add_argument(
         "--weight",
         type=str,
-        default="resnet34.pt",
+        default="weights/mobilenetv2.pt",
         help="Path to gaze esimation model weights"
     )
     parser.add_argument("--view", action="store_true", default=True, help="Display the inference results")
@@ -96,6 +97,20 @@ def main(params):
         while True:
             success, frame = cap.read()
 
+            model = YOLO('yolo11n-pose.pt')
+            results = model(frame)
+            frame_ = results[0].plot()
+
+            for keypoints in results[0].keypoints.data:
+                keypoints = keypoints.cpu().numpy()
+
+                for i, keypoint in enumerate(keypoints):
+                    x, y, confidence = keypoint
+
+                    if confidence > 0.7:
+                        cv2.circle(frame_, (int(x), int(y)), 5, (0, 255, 0), -1)
+                        cv2.putText(frame_, f'{i}', (int(x), int(y) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+
             if not success:
                 logging.info("Failed to obtain frame or EOF")
                 break
@@ -121,13 +136,14 @@ def main(params):
                 yaw_predicted = np.radians(yaw_predicted.cpu())
 
                 # draw box and gaze direction
-                draw_bbox_gaze(frame, bbox, pitch_predicted, yaw_predicted)
+                draw_bbox_gaze(frame_, bbox, pitch_predicted, yaw_predicted)
+                cv2.putText(frame_, f'pitch: {pitch_predicted.numpy()[0]:.2f}, yaw: {yaw_predicted.numpy()[0]:.2f}', (x_min, y_max + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
 
             if params.output:
-                out.write(frame)
+                out.write(frame_)
 
             if params.view:
-                cv2.imshow('Demo', frame)
+                cv2.imshow('Demo', frame_)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 

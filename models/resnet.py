@@ -131,7 +131,7 @@ class Bottleneck(nn.Module):
 class ResNet(nn.Module):
     def __init__(
             self,
-            block: Type[BasicBlock | Bottleneck],
+            block,
             layers: List[int],
             num_classes: int = 1000,
             groups: int = 1,
@@ -183,7 +183,7 @@ class ResNet(nn.Module):
 
     def _make_layer(
             self,
-            block: Type[BasicBlock | Bottleneck],
+            block,
             planes: int,
             blocks: int,
             stride: int = 1,
