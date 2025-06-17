@@ -71,9 +71,7 @@ async def root():
         "status": "running",
         "analyzer_available": ANALYZER_AVAILABLE,
         "endpoints": [
-            "POST /analyze - 비디오 URL 분석",
-            "GET /result/{project_id} - 분석 결과 조회", 
-            "POST /analyze-local - 로컬 파일 테스트"
+            "POST /analysis/action - 비디오 URL을 받아 자세 분석",
         ]
     }
 
@@ -86,7 +84,7 @@ async def health_check():
         "stored_results": len(analysis_results)
     }
 
-@app.post("/analyze", response_model=PostureEventResponse)
+@app.post("/analysis/action", response_model=PostureEventResponse)
 async def analyze_video_from_url(request: AnalysisRequest, background_tasks: BackgroundTasks):
     """
     백엔드에서 비디오 URL을 받아 분석하고 결과 반환
@@ -121,48 +119,6 @@ async def analyze_video_from_url(request: AnalysisRequest, background_tasks: Bac
         
     except Exception as e:
         print(f"Analysis failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
-
-@app.get("/result/{project_id}", response_model=PostureEventResponse)
-async def get_posture_events(project_id: str):
-    """
-    백엔드의 GET /api/projects/{projectId}/posture-events 에 대응
-    분석 결과를 백엔드에 제공
-    """
-    if project_id not in analysis_results:
-        raise HTTPException(status_code=404, detail="Analysis result not found")
-    
-    return analysis_results[project_id]
-
-@app.post("/analyze-local", response_model=PostureEventResponse)
-async def analyze_local_video(request: LocalTestRequest):
-    """
-    로컬 비디오 파일로 테스트하는 기능
-    개발/테스트 용도
-    """
-    if not ANALYZER_AVAILABLE:
-        raise HTTPException(status_code=503, detail="Analyzer not available")
-    
-    if not os.path.exists(request.video_path):
-        raise HTTPException(status_code=404, detail=f"Video file not found: {request.video_path}")
-    
-    print(f"Testing with local file: {request.video_path}")
-    
-    try:
-        # 로컬 파일 분석
-        analysis_result = analyze_video_file(request.video_path)
-        
-        # 백엔드 API 형식으로 변환
-        posture_response = convert_to_backend_format(request.project_id, analysis_result)
-        
-        # 결과 저장
-        analysis_results[request.project_id] = posture_response
-        
-        print(f"Local test completed for project: {request.project_id}")
-        return posture_response
-        
-    except Exception as e:
-        print(f"Local test failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 async def download_video(video_url: str) -> str:

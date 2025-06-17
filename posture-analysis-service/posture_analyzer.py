@@ -22,10 +22,11 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 
 class PostureAnalyzer:
-    def __init__(self, window_duration=3.0, fps=30, skip=3):
+    def __init__(self, window_duration=3.0, fps=30, skip=3, debug=True):
         self.window_duration = window_duration
         self.fps = fps
         self.skip = skip  # Skip frames for analysis, e.g., every 3rd frame
+        self.debug = debug
         self.window_size = int(window_duration * fps / self.skip)  # 120 frames for 4 seconds at 30fps
         
         # Sliding window data storage
@@ -60,6 +61,14 @@ class PostureAnalyzer:
             'hand_on_face': [],
             'turned_away': [],
         }
+
+        self.action_map = {
+            'gaze_down': '시선을 아래로',
+            'body_sway': '좌우로 몸 흔들기',
+            'head_tilt': '고개 기울이기',
+            'hand_on_face': '머리나 얼굴 긁기',
+            'turned_away': '뒤돌아서기',
+        }
         
         # Current ongoing actions (start frame recorded, waiting for end)
         self.ongoing_actions = {}
@@ -79,7 +88,7 @@ class PostureAnalyzer:
             detected_actions = self.analyze_current_window()
             
             # Print currently detected actions
-            if detected_actions:
+            if detected_actions and self.debug:
                 print(f"Frame {self.current_frame}: {', '.join(detected_actions)}")
             
             # Update state tracking
@@ -91,51 +100,40 @@ class PostureAnalyzer:
         
         # 1. Head down detection
         if self.detect_gaze_down():
-            detected.append("시선을 아래로")
+            detected.append("gaze_down")
         
         # 2. Body swaying detection
         if self.detect_body_swaying():
-            detected.append("좌우로 몸 흔들기")
+            detected.append("body_sway")
         
         # 3. Head tilting detection
         if self.detect_head_tilting():
-            detected.append("고개 기울이기")
+            detected.append("head_tilt")
         
         # 4. Hand to face detection
         if self.detect_hand_to_face():
-            detected.append("머리나 얼굴 긁기")
+            detected.append("hand_on_face")
         
         # 5. Turned away detection
         if self.detect_turned_away():
-            detected.append("뒤돌아선 채로 있기")
+            detected.append("turned_away")
         
         return detected
     
     def update_action_tracking(self, detected_actions):
         """Update tracking of action start/end points"""
-        action_map = {
-            "시선을 아래로": "gaze_down",
-            "좌우로 몸 흔들기": "body_sway", 
-            "고개 기울이기": "head_tilt",
-            "머리나 얼굴 긁기": "hand_on_face",
-            "뒤돌아선 채로 있기": "turned_away",
-        }
-        
-        current_detected_keys = set()
-        for action in detected_actions:
-            if action in action_map:
-                current_detected_keys.add(action_map[action])
         
         # Check each possible action
-        for action_key in action_map.values():
+        for action_key in self.action_map.keys():
             was_active = self.current_states[action_key]
-            is_active = action_key in current_detected_keys
+            is_active = action_key in detected_actions
             
             if not was_active and is_active:
                 # Action started
                 start_frame = max(1, self.current_frame - self.window_size)
                 self.ongoing_actions[action_key] = start_frame
-                print(f"🔴 {self.get_action_name(action_key)} 시작: {start_frame}프레임")
+                if self.debug:
+                    print(f"🔴 {self.action_map[action_key]} 시작: {start_frame}프레임")
                 
             elif was_active and not is_active:
                 # Action ended
@@ -144,21 +142,11 @@ class PostureAnalyzer:
                     end_frame = max(1, self.current_frame - self.window_size)
                     self.action_periods[action_key].append((start_frame, end_frame))
                     del self.ongoing_actions[action_key]
-                    print(f"🟢 {self.get_action_name(action_key)} 종료: {end_frame}프레임")
+                    if self.debug:
+                        print(f"🟢 {self.action_map[action_key]} 종료: {end_frame}프레임")
             
             # Update current state
             self.current_states[action_key] = is_active
-    
-    def get_action_name(self, action_key):
-        """Convert action key to Korean name"""
-        names = {
-            'gaze_down': '시선을 아래로',
-            'body_sway': '좌우로 몸 흔들기',
-            'head_tilt': '고개 기울이기', 
-            'hand_on_face': '머리나 얼굴 긁기',
-            'turned_away': '뒤돌아선 채로 있기',
-        }
-        return names.get(action_key, action_key)
     
     def finalize_analysis(self):
         """Finalize any ongoing actions and prepare final report"""
@@ -166,14 +154,15 @@ class PostureAnalyzer:
         for action_key, start_frame in self.ongoing_actions.items():
             end_frame = self.current_frame
             self.action_periods[action_key].append((start_frame, end_frame))
-            print(f"🟡 {self.get_action_name(action_key)} 종료 (영상 끝): {end_frame}프레임")
+            if self.debug:
+                print(f"🟡 {self.action_map[action_key]} 종료 (영상 끝): {end_frame}프레임")
         
         self.ongoing_actions.clear()
     
-    def print_final_statistics(self, save_json=True, json_filename="posture_analysis_result.json"):
+    def print_final_statistics(self, json_filename="posture_analysis_result.json"):
         """Print comprehensive statistics of detected actions and save to JSON"""
         print("\n" + "="*50)
-        print("📊 발표 자세 분석 최종 결과")
+        print("Analysis Results:")
         print("="*50)
         
         total_actions = sum(len(periods) for periods in self.action_periods.values())
@@ -193,21 +182,20 @@ class PostureAnalyzer:
         }
         
         if total_actions == 0:
-            print("✅ 문제가 되는 자세가 발견되지 않았습니다!")
-            json_data["summary"]["message"] = "문제가 되는 자세가 발견되지 않았습니다"
+            print("No bad postures detected.")
+            json_data["summary"]["message"] = "No bad postures detected."
         else:
-            print(f"총 {total_actions}개의 나쁜 자세 구간이 탐지되었습니다.\n")
+            print(f"{total_actions} bad postures detected in the video.")
             
             total_duration_frames = 0
             
             for action_key, periods in self.action_periods.items():
                 if periods:
-                    action_name = self.get_action_name(action_key)
-                    print(f"📌 {action_name}:")
+                    print(f"{self.action_map[action_key]}:")
                     
                     # Prepare JSON data for this action
                     json_data["detected_actions"][action_key] = {
-                        "action_name": action_name,
+                        "action_name": self.action_map[action_key],
                         "periods": []
                     }
                     
@@ -245,13 +233,13 @@ class PostureAnalyzer:
             json_data["summary"]["total_duration_seconds"] = round(total_duration_sec, 1)
         
         # Save to JSON file
-        if save_json:
+        if json_filename:
             try:
                 with open(json_filename, 'w', encoding='utf-8') as f:
                     json.dump(json_data, f, ensure_ascii=False, indent=2)
-                print(f"📄 분석 결과가 '{json_filename}' 파일로 저장되었습니다.")
+                print(f"Results saved to {json_filename}")
             except Exception as e:
-                print(f"⚠️ JSON 파일 저장 중 오류 발생: {e}")
+                print(f"Error while saving JSON file: {e}")
         
         return json_data
     
@@ -437,36 +425,6 @@ class PostureAnalyzer:
         self.print_final_statistics()
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Gaze estimation inference with posture analysis")
-    parser.add_argument("--model", type=str, default="mobilenetv2", help="Model name, default `resnet18`")
-    parser.add_argument(
-        "--weight",
-        type=str,
-        default="weights/mobilenetv2.pt",
-        help="Path to gaze esimation model weights"
-    )
-    parser.add_argument("--view", action="store_true", default=True, help="Display the inference results")
-    parser.add_argument("--source", type=str, default="assets/in_video.mp4",
-                        help="Path to source video file or camera index")
-    parser.add_argument("--output", type=str, default="output.mp4", help="Path to save output file")
-    parser.add_argument("--dataset", type=str, default="gaze360", help="Dataset name to get dataset related configs")
-    parser.add_argument("--json-output", type=str, default="posture_analysis_result.json", 
-                    help="Path to save JSON analysis results")
-    args = parser.parse_args()
-
-    # Override default values based on selected dataset
-    if args.dataset in data_config:
-        dataset_config = data_config[args.dataset]
-        args.bins = dataset_config["bins"]
-        args.binwidth = dataset_config["binwidth"]
-        args.angle = dataset_config["angle"]
-    else:
-        raise ValueError(f"Unknown dataset: {args.dataset}. Available options: {list(data_config.keys())}")
-
-    return args
-
-
 def pre_process(image):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     transform = transforms.Compose([
@@ -483,36 +441,28 @@ def pre_process(image):
 
 def analyze_video_file(video_path):
     """Analyze video file for posture and gaze estimation"""
-    params = parse_args()
-    params.source = video_path  # Override source with provided video path
-    params.view = False  # Disable live view for batch analysis
-    params.output = None  # No output file for batch analysis
-    params.json_output = "posture_analysis_result.json"  # Default JSON output file
 
-    main(params)
-    
-    # Load and return the analysis results
-    analyzer = PostureAnalyzer()
-    results = analyzer.get_results()
-    
-    # Save results to JSON file
-    with open(params.json_output, 'w', encoding='utf-8') as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-    
-    print(f"Analysis results saved to {params.json_output}")
-    return results
+    return main(source=video_path, view=False, output=None, json_output=None)
 
 
-def main(params):
+def main(source, model="mobilenetv2", weight="weights/mobilenetv2.pt", view=True, output="output.mp4", dataset="gaze360", json_output="posture_analysis_result.json"):
+    if dataset in data_config:
+        dataset_config = data_config[dataset]
+        bins = dataset_config["bins"]
+        binwidth = dataset_config["binwidth"]
+        angle = dataset_config["angle"]
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}. Available options: {list(data_config.keys())}")
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    idx_tensor = torch.arange(params.bins, device=device, dtype=torch.float32)
+    idx_tensor = torch.arange(bins, device=device, dtype=torch.float32)
 
     face_detector = uniface.RetinaFace()  # third-party face detection library
 
     try:
-        gaze_detector = get_model(params.model, params.bins, inference_mode=True)
-        state_dict = torch.load(params.weight, map_location=device)
+        gaze_detector = get_model(model, bins, inference_mode=True)
+        state_dict = torch.load(weight, map_location=device)
         gaze_detector.load_state_dict(state_dict)
         logging.info("Gaze Estimation model weights loaded.")
     except Exception as e:
@@ -521,17 +471,17 @@ def main(params):
     gaze_detector.to(device)
     gaze_detector.eval()
 
-    video_source = params.source
+    video_source = source
     if video_source.isdigit() or video_source == '0':
         cap = cv2.VideoCapture(int(video_source))
     else:
         cap = cv2.VideoCapture(video_source)
 
-    if params.output:
+    if output:
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out = cv2.VideoWriter(params.output, fourcc, cap.get(cv2.CAP_PROP_FPS), (width, height))
+        out = cv2.VideoWriter(output, fourcc, cap.get(cv2.CAP_PROP_FPS), (width, height))
 
     if not cap.isOpened():
         raise IOError("Cannot open webcam")
@@ -541,7 +491,7 @@ def main(params):
     posture_analyzer = PostureAnalyzer(window_duration=4.0, fps=fps)
 
     with torch.no_grad():
-        model = YOLO('yolo11n-pose.pt')
+        pose_model = YOLO('yolo11n-pose.pt')
         i = 0
         while True:
             success, frame = cap.read()
@@ -551,7 +501,7 @@ def main(params):
                 break
             
             if i % posture_analyzer.skip == 0:
-                results = model(frame)
+                results = pose_model(frame)
                 frame_ = results[0].plot()
 
                 # Get pose keypoints and bounding box for the first person (if any)
@@ -595,8 +545,8 @@ def main(params):
                     pitch_predicted, yaw_predicted = F.softmax(pitch, dim=1), F.softmax(yaw, dim=1)
 
                     # Mapping from binned to angles
-                    pitch_predicted = torch.sum(pitch_predicted * idx_tensor, dim=1) * params.binwidth - params.angle
-                    yaw_predicted = torch.sum(yaw_predicted * idx_tensor, dim=1) * params.binwidth - params.angle
+                    pitch_predicted = torch.sum(pitch_predicted * idx_tensor, dim=1) * binwidth - angle
+                    yaw_predicted = torch.sum(yaw_predicted * idx_tensor, dim=1) * binwidth - angle
 
                     # Degrees to Radians
                     gaze_pitch = np.radians(pitch_predicted.cpu()).item()
@@ -612,29 +562,20 @@ def main(params):
             else:
                 frame_ = frame.copy()
 
-            if params.output:
+            if output:
                 out.write(frame_)
 
-            if params.view:
+            if view:
                 cv2.imshow('Demo', frame_)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
             i += 1
 
     cap.release()
-    if params.output:
+    if output:
         out.release()
     cv2.destroyAllWindows()
     
     # Finalize analysis and print comprehensive results
     posture_analyzer.finalize_analysis()
-    posture_analyzer.print_final_statistics(save_json=True, json_filename=args.json_output)
-
-
-if __name__ == "__main__":
-    args = parse_args()
-
-    if not args.view and not args.output:
-        raise Exception("At least one of --view or --ouput must be provided.")
-
-    main(args)
+    return posture_analyzer.print_final_statistics(json_filename=json_output)
