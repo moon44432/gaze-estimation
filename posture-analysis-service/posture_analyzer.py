@@ -481,6 +481,28 @@ def pre_process(image):
     return image_batch
 
 
+def analyze_video_file(video_path):
+    """Analyze video file for posture and gaze estimation"""
+    params = parse_args()
+    params.source = video_path  # Override source with provided video path
+    params.view = False  # Disable live view for batch analysis
+    params.output = None  # No output file for batch analysis
+    params.json_output = "posture_analysis_result.json"  # Default JSON output file
+
+    main(params)
+    
+    # Load and return the analysis results
+    analyzer = PostureAnalyzer()
+    results = analyzer.get_results()
+    
+    # Save results to JSON file
+    with open(params.json_output, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    
+    print(f"Analysis results saved to {params.json_output}")
+    return results
+
+
 def main(params):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

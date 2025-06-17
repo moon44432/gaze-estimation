@@ -41,9 +41,9 @@ scipy==1.13.1
 six==1.17.0
 sympy==1.13.1
 tifffile==2024.8.30
-torch==2.5.1+cu121
-torchaudio==2.5.1+cu121
-torchvision==0.20.1+cu121
+torch==2.5.1
+torchaudio==2.5.1
+torchvision==0.20.1
 tqdm==4.67.1
 typing_extensions==4.14.0
 tzdata==2025.2
